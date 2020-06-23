@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Novel Reminder
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  Insert a panel to help you remind names of characters, especially when names are similar or difficult to memorize *looking at korean novels*
 // @author       Maxoux
 // @match        https://www.webnovel.com/book/*/*

@@ -6,6 +6,7 @@
 // @author       Maxoux
 // @match        https://www.webnovel.com/book/*/*
 // @match        https://*boxnovel.com/novel/*/*
+// @match        http://readfreenovel.com/*/*
 //
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js
 // @require      https://cdn.jsdelivr.net/npm/vue/dist/vue.js
@@ -20,7 +21,7 @@
 // @resource     spec https://cdnjs.cloudflare.com/ajax/libs/spectrum/1.8.1/spectrum.min.css
 
 
-// Function to determine what website is currently on, will be used to add few css tweak depending on the url
+// Function to determine what website is currently on, used to determine novel id and name, css tweak, etc...
 function get_website() {
     return window.location.host.split('.').reverse()[1];
 }
@@ -35,15 +36,27 @@ function select(obj) {
         return null;
 }
 
-// Function to fetch the novel name, used to differentiate which characters to load, could be name or id but must be unique
+// Function to fetch the novel id, used to differentiate which characters to load, could be name or id but must be unique
 function get_novel_id() {
 
     var novel_id_getter = {
         webnovel: () => window.location.href.split('/')[4],
-        boxnovel: () => window.location.href.split('/')[4]
+        boxnovel: () => window.location.href.split('/')[4],
+        readfreenovel: () => window.location.href.split('/')[3]
     }
 
     return select(novel_id_getter)();
+}
+
+// Function to fetch novel name, used to determinate novels when we want to import/export datas
+function get_novel_name() {
+    var novel_name_getter = {
+        webnovel: () => $("header a.dib.ell").prop('title'),
+        boxnovel: () => $(".breadcrumb a")[1].innerText,
+        readfreenovel: () => $(".black-link")[0].innerText
+    }
+
+    return select(novel_name_getter)();
 }
 
 // Method to inject the panel in the body, using fixed component in body is the most permissive way, but we can insert it wherever we want
@@ -60,21 +73,21 @@ function name_injector(onClickFn, character_list) {
 
 	// Coloration of all names (and corresponding aliases)
 	character_list.forEach((char) => {
-        console.log('Injecting for : ', char);
+        //console.log('Injecting for : ', char);
 		var names = char.getNamesFilter();
-        console.log('Names/aliases : ', names);
+        //console.log('Names/aliases : ', names);
 
 		names.forEach((name, i) => {
 			var found = $(`p:contains("${name}")`).not(`.edited-${i}-${char.id}`);
-			console.log('search for ', name);
-			console.log('Found %d elements.', found.length || 0, found);
+			//console.log('search for ', name);
+			//console.log('Found %d elements.', found.length || 0, found);
 
 			if (!found || !found.length)
 				return ;
 
 
 			$(found).each(function() {
-				console.log('Computing : ', this);
+				//console.log('Computing : ', this);
 				var el = $(this).html()
 				var modified_html = el.split(name).join(`<span class="injected_${char.id}" style="${char.getStyle()}">${name}</span>`);
 				this.innerHTML = modified_html;
@@ -135,6 +148,21 @@ class Character {
 			this.setAliases(alias);
 	}
 
+    export() {
+        var exported = [
+            "first_name",
+            "last_name",
+            "text",
+            "color",
+            "alias"
+        ]
+
+        var data = {};
+        exported.forEach((label) => data[label] = this[label]);
+
+        return data;
+    }
+
 	getName() {
 		return `${this.first_name} ${this.last_name}`
 	}
@@ -179,15 +207,22 @@ const panel_html = `
 <div id="reminder_panel" style="position: fixed; right: 70px; bottom: 5vh; height: 80vh; width: 300px; background-color: white; padding: 30px; border-radius: 5px; box-shadow: 0px 0px 20px -8px rgba(0,0,0,0.75);">
 	<div style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column">
 		<div style="display: flex; flex-direction: row; justify-content: space-between">
-			<h4>Personnages</h4>
+			<h4>{{mode}}</h4>
 			<div class="reminder_button" v-on:click="addCharacter">Add</div>
 		</div>
 		<div style="overflow-y: auto; flex-grow: 1">
-			<div v-for="character in character_list" :key="character.id">
-				<div @click="editCharacter(character.id)" :style="character.getStyle() + '; font-size: 18px'">{{character.getName()}}</div>
+            <div v-if="mode == 'character'">
+		    	<div v-for="character in character_list" :key="character.id">
+			    	<div @click="editCharacter(character.id)" :style="character.getStyle() + '; font-size: 18px'">{{character.getName()}}</div>
 
-                <div>{{character.text}}</div>
-			</div>
+                    <div>{{character.text}}</div>
+			    </div>
+            </div>
+            <div v-if="mode == 'export'">
+                <div v-for="(novel, id) in saved_data">
+                    <h4 v-if="id != '_info'" @click="editNovel(id)" style="cursor: pointer">{{saved_data._info && saved_data._info.novel_list[id] ? saved_data._info.novel_list[id] : id}}</h4>
+                </div>
+            </div>
 		</div>
 
 		<div style="width: 100%">
@@ -201,9 +236,15 @@ const panel_html = `
 				<div style="cursor: pointer" class="reminder_button" @click="deleteCharacter(edition.id)" v-if="edition.id">Delete</div>
 				<div style="cursor: pointer" class="reminder_button" @click="disableEdit">Cancel</div>
 			</div>
+			<div v-if="selected_novel" style="display: flex; flex-direction: column">
+				<textarea rows="10" v-model="export_import_data" placeholder="Comment" style="border: 1px black solid" />
+				<div style="cursor: pointer" class="reminder_button" @click="save(true, selected_novel, export_import_data); setMode('character')">Save</div>
+				<div style="cursor: pointer" class="reminder_button" @click="selected_novel = null">Cancel</div>
+			</div>
 			<div style="display: flex; flex-direction: row; justify-content: space-between">
 				<div style="cursor: pointer" @click="refresh">Refresh</div>
-				<div style="cursor: pointer" @click="exportData">export</div>
+				<div v-if="mode == 'character'" style="cursor: pointer" @click="setMode('export')">export</div>
+                <div v-if="mode == 'export'" style="cursor: pointer" @click="setMode('character')">characters</div>
 			</div>
 		</div>
 	</div>
@@ -224,7 +265,10 @@ function launch_app() {
 				color: "",
 				alias: ""
 			},
-			adding: false
+			adding: false,
+            mode: "character",
+            selected_novel: null,
+            export_import_data: null
 		},
 		mounted: function() {
 			/*$('#custom').spectrum({
@@ -235,6 +279,15 @@ function launch_app() {
             this.refresh();
 		},
         methods: {
+            editNovel: function(id) {
+                this.export_import_data = JSON.stringify(this.saved_data[id]);
+                this.selected_novel = id;
+            },
+            setMode: function(mode) {
+                this.selected_novel = null;
+                this.adding = false;
+                this.mode = mode;
+            },
             load: function() {
                 var novel_id = get_novel_id();
                 console.log('novel id : ', novel_id);
@@ -262,7 +315,9 @@ function launch_app() {
 
                 this.generateDefaultColors();
             },
-            save: function(force_datas) {
+            save_bak: function(force_datas) {
+                // Disabling all saves
+                return
 
                 if (force_datas) {
                     window.localStorage.setItem("reminder_data", force_datas);
@@ -281,6 +336,41 @@ function launch_app() {
 				window.localStorage.setItem("reminder_data", JSON.stringify(data));
 				return data;
 			},
+            save: function(import_mode, novel_id, forced_data) {
+                // If novel_id and forced_data are set, we are in the importation mode.
+
+                var character_data;
+                novel_id = novel_id || get_novel_id();
+
+                // Prepare export
+                if (!import_mode)
+                    character_data = this.character_list.map((char) => char.export());
+                else
+                    character_data = JSON.parse(forced_data);
+
+                // Get saved datas
+                var data = window.localStorage.getItem("reminder_data");
+
+                if (!data || !data.length)
+                    data = {};
+                else
+                    data = JSON.parse(data);
+
+                // Extract metadatas and update it
+                var metadata = data._info || {novel_list: {}, version: null};
+                // For now we just override version savedata, in case of needed backward compatibility in the future
+                metadata.version = 0.5;
+                if (!import_mode)
+                    metadata.novel_list[novel_id] = get_novel_name();
+
+                data._info = metadata;
+
+                data[novel_id] = character_data;
+				window.localStorage.setItem("reminder_data", JSON.stringify(data));
+                console.log('saved : ', data)
+                this.load();
+				return data;
+            },
 			exportData: function() {
                 var datas = window.localStorage.getItem("reminder_data");
 				datas = prompt("Datas", datas);
@@ -368,8 +458,17 @@ function launch_app() {
         computed: {
             character_without_color: function() {
                 return _.filter(this.character_list, (char) => !char.color);
+            },
+            saved_data: function() {
+                var data = window.localStorage.getItem("reminder_data");
+                return JSON.parse(data);
+            },
+            novel_list: function() {
+                var data = lodash.cloneDeep(this.saved_data);
+                data._info = null;
+                return lodash.values(data);
             }
-        }
+         }
     })
 }
 

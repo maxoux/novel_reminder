@@ -8,20 +8,25 @@
 // @match        https://*boxnovel.com/novel/*/*
 // @match        http://readfreenovel.com/*/*
 // @match        https://wuxiaworld.site/novel/*
+// @match        https://daonovel.com/novel/*
 //
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js
 // @require      https://cdn.jsdelivr.net/npm/vue/dist/vue.js
 // @require      https://unpkg.com/uuid@latest/dist/umd/uuidv4.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.js
+// @require      https://kit.fontawesome.com/4d41395a13.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js
 // @grant        GM_getResourceText
 // @grant        GM_addStyle
+// @grant       GM_xmlhttpRequest
 // ==/UserScript==
 
 // Temporary holded library for future use (maybe)
 // @require      https://cdnjs.cloudflare.com/ajax/libs/spectrum/1.8.1/spectrum.min.js
 // @resource     spec https://cdnjs.cloudflare.com/ajax/libs/spectrum/1.8.1/spectrum.min.css
 
-const script_version = "0.7";
+const script_version = "0.9";
+const host = "http://novel.laize.pro"
 
 
 // Function to determine what website is currently on, used to determine novel id and name, css tweak, etc...
@@ -71,6 +76,35 @@ function additionnal_script() {
                     padding-right: 400px !important
                 }
                 .c-blog-post .entry-content {
+                }
+                .body-wrap {
+                }
+            ` );
+
+            $("a[href='https://wuxiaworld.site']").remove();
+
+        },
+        daonovel: () => {
+            GM_addStyle ( `
+                body {
+                    padding-right: 400px !important
+                }
+                .c-blog-post .entry-content {
+                }
+                .body-wrap {
+                }
+            ` );
+
+            $("a[href='https://wuxiaworld.site']").remove();
+            $(".btn.back").remove();
+
+        },
+        googleusercontent: () => {
+            GM_addStyle ( `
+                body {
+                    padding-right: 400px !important
+                }
+                .c-blog-post .entry-content {
                     color: black !important;
                 }
                 .body-wrap {
@@ -96,7 +130,9 @@ function get_novel_id() {
         webnovel: () => window.location.href.split('/')[4],
         boxnovel: () => window.location.href.split('/')[4],
         readfreenovel: () => window.location.href.split('/')[3],
-        wuxiaworld: () => window.location.href.split('/')[4]
+        wuxiaworld: () => window.location.href.split('/')[4],
+        daonovel: () => window.location.href.split('/')[4],
+        googleusercontent: () => window.location.href.split('/')[3],
     }
 
     return select(novel_id_getter)();
@@ -108,7 +144,9 @@ function get_novel_name() {
         webnovel: () => $("header a.dib.ell").prop('title'),
         boxnovel: () => $(".breadcrumb a")[1].innerText,
         readfreenovel: () => $(".black-link")[0].innerText,
-        wuxiaworld: () => $(".breadcrumb li")[1].innerText
+        wuxiaworld: () => $(".breadcrumb li")[1].innerText,
+        daonovel: () => $(".breadcrumb li")[1].innerText,
+        googleusercontent: () => $(".breadcrumb li")[1].innerText
     }
 
     return select(novel_name_getter)();
@@ -183,7 +221,12 @@ function name_injector(onClickFn, character_list) {
 
 }
 
-function selectColor(numOfSteps, step) {
+function selectColor(colors, colorNum){
+    if (colors < 5) colors = 5; // defaults to one color - avoid divide by zero
+    return "hsl(" + (colorNum * (360 / colors) % 360) + ",100%,50%)";
+}
+
+function selectColorbak(numOfSteps, step) {
     // This function generates vibrant, "evenly spaced" colours (i.e. no clustering). This is ideal for creating easily distinguishable vibrant markers in Google Maps and other apps.
     // Adam Cole, 2011-Sept-14
     // HSV to RBG adapted from: http://mjijackson.com/2008/02/rgb-to-hsl-and-rgb-to-hsv-color-model-conversion-algorithms-in-javascript
@@ -228,6 +271,12 @@ function save_migrate(save, save_version) {
                     delete character.last_name;
                     return character;
                 })
+
+                return save;
+            },
+            version: "0.8",
+            fn: (save) => {
+                save._info.synchro_key = uuidv4();
 
                 return save;
             }
@@ -330,11 +379,87 @@ const panel_html = `
 <div id="reminder_panel" style="position: fixed; right: 70px; bottom: 5vh; height: 80vh; width: 300px; background-color: white; padding: 30px; border-radius: 5px; box-shadow: 0px 0px 20px -8px rgba(0,0,0,0.75);">
 	<div style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column">
 		<div style="display: flex; flex-direction: row; justify-content: space-between">
-			<h4>{{mode}}</h4>
+			<h4>{{actual_panel_name}}</h4>
 			<div class="reminder_button" v-on:click="addCharacter">Add</div>
 		</div>
 		<div style="overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column">
 
+            <div v-show="mode == 'main'">
+                <div class="menu_container" style="display: flex; flex-wrap: wrap; ">
+                    <div class="menu_item" @click="setMode(menu.panel)" v-for="menu in menu_list">
+                        <div class="menu_icon" style="flex-grow: 1; width: 100%; display: flex; align-items: center; justify-content: center">
+                            <i :class="menu.icon" style="font-size: 45px"></i>
+                        </div>
+                        <div style="width: 100%; text-align: center; font-size: 15px; font-weight: 600">{{menu.name}}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-show="mode == 'sync'" style="height: 100%">
+                <div class="key_info" style="display: flex; align-items: center">
+                    <div style="align-self: center; margin-right: 10px;">key: </div>
+                    <input type="text" v-model="synchronization_key" style="height: 16px; font-size: 10px; border: 1px solid grey; width: 100%"></input>
+                </div>
+                <div style="width: 100%; display: flex; justify-content: space-between">
+                    <div>status: </div>
+                    <div>
+                        {{cloud_status}}
+                        <i class="fas fa-egg" :style="{ color: {'DISCONNECTED': 'grey', 'CONNECTING': 'orange', 'FAILED': 'red', 'CONNECTED': 'green'}[cloud_status] }"></i>
+                    </div>
+                </div>
+                <div v-if="cloud_status == 'CONNECTED'" style="width: 100%; display: flex; justify-content: space-between">
+                    <div>sync status: </div>
+                    <div>
+                        {{sync_status}}
+                        <i class="fas fa-egg" :style="{ color: {'IDDLE': 'grey', 'INFO': 'blue', 'SYNCING': 'orange', 'FAILED': 'red', 'SYNCED': 'green'}[sync_status] }"></i>
+                    </div>
+                </div>
+                <div v-if="cloud_status == 'DISCONNECTED'">
+                    <p style="font-size: 11px; margin-top: 20px">
+                        Hi ! Here is a little side project to synchronize your characters across devices !<br/>
+                        After connection, click on export to upload your settings, then copy/paste the key on your target computer and click on import !<br/>
+                        Warning: This is a side project uploaded on a personnal server, so please don't be rash with this feature :<br/>
+                            - Don't put things unrelated to novels<br/>
+                            - Don't try to overflow or penetrate the server<br/>
+                        Any detected abuse will lead to disable this feature for everyone.<br/>
+                        Beside this, i don't know how much time this service will be available, depending on other's project and future usage of server's ressources.<br/>
+                        But hey, it's a free thing for my fellow camarades from a passionnate, so please enjoy :D<br/>
+                    </p>
+                    <div style="width: 100%; display: flex; align-items: center; justify-content: center;"><div style="cursor: pointer" @click="connect">Connect</div></div>
+                </div>
+                <div v-if="cloud_status == 'FAILED'">
+                    <p style="font-size: 11px; margin-top: 20px">
+                        Oups... Seems the connection with the serv have failed :/<br/>
+                        If it's not your connection, the server address have maybe changed and you need to find an update.<br/>
+                        If you haven't find any.. Sorry, seems this feature have been shut down, hope you all have enjoyed when it was time !<br/>
+                        ps : You can still retry of course, try your luck ?<br/>
+                    </p>
+                    <div style="width: 100%; display: flex; align-items: center; justify-content: center;"><div style="cursor: pointer" @click="connect">Retry</div></div>
+                </div>
+                <div v-if="cloud_status == 'CONNECTED'">
+
+                    <div style="margin-top: 20px">
+                        <div>Server online !</div>
+                        <div>the server is running for {{cloud_uptime_string}}</div>
+                        <div>Nb of settings: {{cloud_score}}. {{cloud_comment}}</div>
+                    </div>
+                    <div style="margin-top: 20px" v-if="sync_backup === false">
+                        <div>This key never has been used !</div>
+                    </div>
+                    <div style="margin-top: 20px" v-if="sync_backup">
+                        <div>Settings found !</div>
+                        <div>Last uploaded: {{sync_backup.updated_at}}</div>
+                        <div>Novels registered: {{backup_info.novel_count}}</div>
+                        <div>Total characters: {{backup_info.character_count}}</div>
+                    </div>
+                    <div style="margin-top: 20px">
+                        <a class="cloud_button" @click="cloudFind">Check this key</a><br/>
+                        <a class="cloud_button" @click="upload">Upload your novels</a><br/>
+                        <a class="cloud_button" @click="restore">Download your novels</a><br/>
+                    </div>
+
+                </div>
+            </div>
 
             <div v-show="mode == 'character'">
 		    	<div class="character_container" v-for="character in character_list" :key="character.id" style="margin-bottom: 10px">
@@ -356,11 +481,11 @@ const panel_html = `
 		<div style="width: 100%">
 
 
-			<div v-if="adding" style="display: flex; flex-direction: column">
-				<input v-model="edition.name" placeholder="Name" style="height: 20px; padding: 0; width: calc(50% - 20px); border: 1px black solid"></input>
-				<textarea ref="text_input" v-model="edition.text" placeholder="Comment" style="border: 1px black solid" />
-				<input v-model="edition.alias" placeholder="Aliases, separated by ','" style="height: 20px; padding: 0; width: 100%; border: 1px black solid"></input>
-				<input v-model="edition.color" type='text' placeholder="Color (like '#FF0000')" />
+			<div v-if="adding" style="display: flex; flex-direction: column; color: black !important">
+				<input v-model="edition.name" placeholder="Name" style="height: 20px; padding: 0; width: calc(50% - 20px); border: 1px black solid; color: black"></input>
+				<textarea ref="text_input" v-model="edition.text" placeholder="Comment" style="border: 1px black solid; color: black" />
+				<input v-model="edition.alias" placeholder="Aliases, separated by ','" style="height: 20px; padding: 0; width: 100%; border: 1px black solid; color: black"></input>
+				<input v-model="edition.color" type='text' placeholder="Color (like '#FF0000')" style="color: black" />
 				<div style="cursor: pointer" class="reminder_button" @click="saveCharacter">Save</div>
 				<div style="cursor: pointer" class="reminder_button" @click="deleteCharacter(edition.id)" v-if="edition.id">Delete</div>
 				<div style="cursor: pointer" class="reminder_button" @click="disableEdit">Cancel</div>
@@ -368,15 +493,16 @@ const panel_html = `
 
 			<div v-if="selected_novel" style="display: flex; flex-direction: column">
 				<textarea rows="10" v-model="export_import_data" placeholder="Comment" style="border: 1px black solid" />
-				<div style="cursor: pointer" class="reminder_button" @click="save(true, selected_novel, export_import_data); setMode('character')">Save</div>
+				<div style="cursor: pointer" class="reminder_button" @click="saveNovel(selected_novel, export_import_data); setMode('character')">Save</div>
 				<div style="cursor: pointer" class="reminder_button" @click="selected_novel = null">Cancel</div>
 			</div>
 
 
 			<div style="display: flex; flex-direction: row; justify-content: space-between">
 				<div style="cursor: pointer" @click="refresh">Refresh</div>
-				<div v-if="mode == 'character'" style="cursor: pointer" @click="setMode('export')">export</div>
-                <div v-if="mode == 'export'" style="cursor: pointer" @click="setMode('character')">characters</div>
+				<div style="cursor: pointer" @click="setMode('main')">Menu</div>
+				<div v-if="false && mode == 'character'" style="cursor: pointer" @click="setMode('export')">export</div>
+                <div v-if="false && mode == 'export'" style="cursor: pointer" @click="setMode('character')">characters</div>
 			</div>
 		</div>
 	</div>
@@ -402,6 +528,14 @@ function launch_app() {
             export_import_data: null,
 
             tooltip_div: null,
+
+            // Synchronization part
+            synchronization_key: null,
+            cloud_status: 'DISCONNECTED',
+            cloud_uptime: null,
+            cloud_score: null,
+            sync_status: 'IDDLE',
+            sync_backup: null
 		},
 		mounted: function() {
 			/*$('#custom').spectrum({
@@ -415,6 +549,145 @@ function launch_app() {
 
 		},
         methods: {
+            connect: function() {
+                this.cloud_status = "CONNECTING";
+
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `${host}/novel-settings/info`,
+                    headers: {
+                      "Accept": "application/json"            // If not specified, browser defaults will be used.
+                    },
+                    onload: (res) => {
+                        console.log("response: ", res);
+
+                        if (res.status < 200 || res.status > 299) {
+                            this.cloud_status = "FAILED";
+                            return ;
+                        }
+                        var response = JSON.parse(res.response);
+                        this.cloud_uptime = response.uptime;
+                        this.cloud_score = response.settings_count;
+                        this.cloud_status = "CONNECTED";
+
+                    }
+                  });
+
+            },
+            cloudFind: function() {
+                //{'IDDLE': 'grey', 'INFO': 'blue', 'SYNCING': 'orange', 'FAILED': 'red', 'SYNCED': 'green'}
+
+                if (!this.synchronization_key || !this.synchronization_key.length) {
+                    this.sync_status = 'FAILED';
+                    return Promise.reject();
+                }
+
+                var promise = new Promise((resolve, reject) => {
+                    this.sync_status = "SYNCING";
+
+                    GM_xmlhttpRequest({
+                        method: "GET",
+                        url: `${host}/novel-settings/find/${this.synchronization_key}`,
+                        headers: {
+                          "Accept": "application/json"            // If not specified, browser defaults will be used.
+                        },
+                        onload: (res) => {
+                            console.log("response: ", res);
+
+                            if (res.status == 404) {
+                                this.sync_status = "INFO";
+                                this.sync_backup = false;
+                                return resolve();
+                            }
+                            else if (res.status < 200 || res.status > 299) {
+                                this.sync_status = "FAILED";
+                                return reject();
+                            }
+
+                            var response = JSON.parse(res.response);
+                            response.settings = JSON.parse(response.settings);
+
+                            console.log("BAckup fetched : ", response);
+                            this.sync_backup = response;
+                            this.sync_status = "INFO";
+                            return resolve(response);
+                        }
+                      });
+                })
+
+                return promise;
+
+            },
+            upload: function() {
+
+                var promise = new Promise((resolve, reject) => {
+                    this.sync_status = "SYNCING";
+                    var key = this.synchronization_key;
+                    var save = this.save();
+                    console.log("Save to upload : ", save);
+
+                    GM_xmlhttpRequest({
+                        method: "POST",
+                        url: `${host}/novel-settings`,
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"           // If not specified, browser defaults will be used.
+                        },
+                        data: JSON.stringify({
+                            key: key,
+                            settings: JSON.stringify(save),
+                        }),
+                        onload: (res) => {
+                            console.log("response: ", res);
+
+                            if (res.status < 200 || res.status > 299) {
+                                this.sync_status = "FAILED";
+                                return reject();
+                            }
+
+                            var response = JSON.parse(res.response)[0];
+                            console.log("parsed response", response);
+                            response.settings = JSON.parse(response.settings);
+
+                            console.log("Backup fetched : ", response);
+                            this.sync_backup = response;
+                            this.saveSyncKey(key);
+                            return resolve();
+                        }
+                      });
+                })
+
+                promise = promise
+                            .then(() => {
+                                return this.cloudFind();
+                            })
+                            .then(() => {
+                                this.sync_status = "SYNCED";
+                            })
+                            .catch(() => {
+                                this.sync_status = 'FAILED';
+                            })
+
+                return promise;
+
+            },
+            restore: function() {
+                return this.cloudFind()
+                            .then((data) => {
+                                if (!data)
+                                    return Promise.reject();
+                                console.log("Datas to restore : ", data);
+                                window.localStorage.setItem("reminder_data", JSON.stringify(data.settings));
+                                this.load();
+                            })
+                            .then(() => {
+                                this.sync_status = 'SYNCED';
+                            })
+                            .catch(() => {
+                                this.sync_status = 'FAILED';
+                            })
+            },
+
             selectionHandler: function() {
 
                 var selection = window.getSelection();      // get the selection then
@@ -432,7 +705,7 @@ function launch_app() {
                     this.tooltip_div = null;
                 }
 
-                if (rect.width == 0 || name.length < 5 || name.length > 30)
+                if (rect.width == 0 || name.length < 4 || name.length > 30)
                     return ;
 
                 var div = document.createElement('div');   // make box
@@ -474,6 +747,12 @@ function launch_app() {
                 this.selected_novel = id;
             },
             setMode: function(mode) {
+                // Generate a key if go to sync but haven't one
+                if (mode == "sync" && !this.synchronization_key) {
+                    this.synchronization_key = uuidv4();
+                    this.saveSyncKey();
+                }
+
                 this.selected_novel = null;
                 this.adding = false;
                 this.mode = mode;
@@ -506,19 +785,32 @@ function launch_app() {
                     this.character_list.push(new Character(perso))
                 });
 
+                this.synchronization_key = data._info.synchro_key;
+
                 this.generateDefaultColors();
             },
-            save: function(import_mode, novel_id, forced_data) {
+            saveSyncKey: function(key) {
+                this.synchronization_key = key;
+
+                var data = window.localStorage.getItem("reminder_data");
+                data = JSON.parse(data);
+                data._info.synchro_key = key;
+                window.localStorage.setItem("reminder_data", JSON.stringify(data));
+            },
+            save: function() {
+                var datas = this.character_list.map((char) => char.export());
+                var novel_id = get_novel_id();
+
+                console.log("Attempt to saving datas : ", datas);
+                return this.saveNovel(novel_id, JSON.stringify(datas));
+            },
+            saveNovel: function(novel_id, forced_data) {
                 // If novel_id and forced_data are set, we are in the importation mode.
 
                 var character_data;
                 novel_id = novel_id || get_novel_id();
 
-                // Prepare export
-                if (!import_mode)
-                    character_data = this.character_list.map((char) => char.export());
-                else
-                    character_data = JSON.parse(forced_data);
+                character_data = JSON.parse(forced_data);
 
                 // Get saved datas
                 var data = window.localStorage.getItem("reminder_data");
@@ -529,26 +821,20 @@ function launch_app() {
                     data = JSON.parse(data);
 
                 // Extract metadatas and update it
-                var metadata = data._info || {novel_list: {}, version: null};
+                var metadata = data._info || {novel_list: {}, version: null, synchro_key: uuidv4()};
                 // For now we just override version savedata, in case of needed backward compatibility in the future
                 metadata.version = script_version;
-                if (!import_mode)
-                    metadata.novel_list[novel_id] = get_novel_name();
+
+                metadata.novel_list[novel_id] = get_novel_name();
 
                 data._info = metadata;
 
                 data[novel_id] = character_data;
 				window.localStorage.setItem("reminder_data", JSON.stringify(data));
                 console.log('saved : ', data)
-                this.load();
+                // this.load();
 				return data;
             },
-			exportData: function() {
-                var datas = window.localStorage.getItem("reminder_data");
-				datas = prompt("Datas", datas);
-				this.save(datas);
-				this.load();
-			},
 			disableEdit: function() {
 				this.edition.name = "";
 				this.edition.text = "";
@@ -640,16 +926,99 @@ function launch_app() {
                 data._info = null;
                 return _.values(data);
             },
-            novel_name: () => get_novel_name()
+            novel_name: () => get_novel_name(),
+            actual_panel_name: function() {
+                if (this.mode == "main")
+                    return "Menu"
+                return this.menu_list.find((menu) => menu.panel == this.mode).name;
+            },
+            menu_list: () => ([
+                {
+                    name: "Characters",
+                    panel: "character",
+                    icon: "fas fa-user"
+                },
+                {
+                    name: "Export",
+                    panel: "export",
+                    icon: "fas fa-file-export"
+                },
+                {
+                    name: "Online Sync",
+                    panel: "sync",
+                    icon: "fas fa-globe-europe"
+                },
+                // {
+                //     name: "Settings",
+                //     panel: "main",
+                //     icon: "fas fa-cogs",
+                // },
+            ]),
+            cloud_uptime_string: function() {
+                var days = this.cloud_uptime / (3600*24);
+                return `${Math.round(days)} days !`
+            },
+            cloud_comment: () => "",
+            backup_info: function() {
+                if (!this.sync_backup)
+                    return {};
+
+                var character_count = _.reduce(this.sync_backup.settings, (prev, item, index) => {
+                    if (index != '_info')
+                        return prev + item.length;
+                    else
+                        return prev;
+                }, 0)
+
+                return {
+                    novel_count: _.size(this.sync_backup.settings._info.novel_list),
+                    character_count: character_count,
+                }
+            }
          }
     })
 }
+
+const novel_css = `
+    .menu_item {
+        cursor: pointer;
+        flex-shrink: 0;
+        width: 100px;
+        height: 120px;
+        margin: 10px;
+        margin-top: 14px;
+        border-bottom: 1px solid:
+        padding: 5px;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid white;
+        transition: all 0.2s;
+        font-family: 'Poppins', sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #888888;
+        -webkit-font-smoothing: antialiased !important;
+    }
+    .menu_item .menu_icon {
+
+    }
+    .menu_item:hover {
+        background-color: #ececec;
+        border-radius: 5px;
+        color: darkgray;
+    }
+    .cloud_button {
+        margin-bottom: 5px;
+        font-size: 15px;
+        cursor: pointer;
+    }
+`;
 
 (function() {
 	'use strict';
     // Disabled importation for color picker, not sure if it will be practical since use of auto-generated colors (and i'm a lazy guy)
 	//var cssTxt  = GM_getResourceText("spec");
-	//GM_addStyle (cssTxt);
+	GM_addStyle(novel_css);
     additionnal_script();
 
     setTimeout(() => {

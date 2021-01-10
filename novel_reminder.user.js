@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Novel Reminder
 // @namespace    http://tampermonkey.net/
-// @version      0.7
+// @version      1.0
 // @description  Insert a panel to help you remind names of characters, especially when names are similar or difficult to memorize *looking at korean novels*
 // @author       Maxoux
 // @match        https://www.webnovel.com/book/*/*
@@ -18,17 +18,17 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.6.1/randomColor.min.js
 // @require      https://cdn.jsdelivr.net/npm/vue-js-modal@1.3.28/dist/index.min.js
-// @resource     css http://localhost:8080/style.css
+// @resource     css https://raw.githubusercontent.com/maxoux/novel_reminder/master/style.css
 // @grant        GM_getResourceText
 // @grant        GM_addStyle
-// @grant       GM_xmlhttpRequest
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 // Temporary holded library for future use (maybe)
 // @require      https://cdnjs.cloudflare.com/ajax/libs/spectrum/1.8.1/spectrum.min.js
 // @resource     spec https://cdnjs.cloudflare.com/ajax/libs/spectrum/1.8.1/spectrum.min.css
 
-const script_version = "0.9";
+const script_version = "1.0";
 const host = "http://novel.laize.pro"
 
 
@@ -1293,7 +1293,7 @@ function launch_app() {
         //var cssTxt  = GM_getResourceText("spec");
         //GM_addStyle(novel_css);
         var css = GM_getResourceText("css")
-        
+        console.log("[CSS] ", css);
         if (css) {
             GM_addStyle(css);
         }

@@ -13,9 +13,12 @@
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js
 // @require      https://cdn.jsdelivr.net/npm/vue/dist/vue.js
 // @require      https://unpkg.com/uuid@latest/dist/umd/uuidv4.min.js
-// @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.js
 // @require      https://kit.fontawesome.com/4d41395a13.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.15/lodash.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/randomcolor/0.6.1/randomColor.min.js
+// @require      https://cdn.jsdelivr.net/npm/vue-js-modal@1.3.28/dist/index.min.js
+// @resource     css http://localhost:8080/style.css
 // @grant        GM_getResourceText
 // @grant        GM_addStyle
 // @grant       GM_xmlhttpRequest
@@ -29,21 +32,99 @@ const script_version = "0.9";
 const host = "http://novel.laize.pro"
 
 
-// Function to determine what website is currently on, used to determine novel id and name, css tweak, etc...
-function get_website() {
-    return window.location.host.split('.').reverse()[1];
+const repositories = {
+    webnovel: {
+        get_novel_id: () => window.location.href.split('/')[4],
+        get_novel_name: () => $("header a.dib.ell").prop('title')
+    },
+    daonovel: {
+        get_novel_id: () => window.location.href.split('/')[4],
+        get_novel_name: () => $(".breadcrumb li")[1].innerText,
+        get_chapter_nb: () => Number.parseInt(window.location.href.split('/')[5].slice(8)),
+        get_novel_link: () => window.location.href.split('/').slice(0, 5).join('/'),
+        get_chapter_link: (chapter) => repo.handle('get_novel_link') + "/chapter-" + chapter,
+        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim()
+    },
+    boxnovel: {
+        get_novel_id: () => window.location.href.split('/')[4],
+        get_novel_name: () => $(".breadcrumb a")[1].innerText,
+    },
+    readfreenovel: {
+        get_novel_id: () => window.location.href.split('/')[3],
+        get_novel_name: () => $(".black-link")[0].innerText,
+    },
+    wuxiaworld: {
+        get_novel_id: () => window.location.href.split('/')[4],
+        get_novel_name: () => $(".breadcrumb li")[1].innerText,
+    },
+    googleusercontent: {
+        get_novel_id: () => window.location.href.split('/')[3],
+        get_novel_name: () => $(".breadcrumb li")[1].innerText
+    },
 }
 
-// Function who select and apply object depending of which website we are, similar to Platform.select in react-native
-function select(obj) {
-    if (obj[get_website()])
-        return obj[get_website()];
-    else if (obj.default)
-        return obj.default;
-    else
-        return null;
+class RepositoryManager {
+    
+    repository_list;
+    actual_repository;
+    actual_repository_name;
+
+    constructor(repository_list) {
+        this.repository_list = repository_list;
+        this.actual_repository = RepositoryManager.select(this.repository_list);
+        this.actual_repository_name = RepositoryManager.get_website();
+
+        if (!this.actual_repository)
+            throw new Error("Repository for this website [%s] not found !", RepositoryManager.get_website());
+    }
+
+    // Function who select and apply object depending of which website we are, similar to Platform.select in react-native
+    static select(obj) {
+        if (obj[RepositoryManager.get_website()])
+            return obj[RepositoryManager.get_website()];
+        else if (obj.default)
+            return obj.default;
+        else
+            return null;
+    }
+
+    // Function to determine what website is currently on, used to determine novel id and name, css tweak, etc...
+    static get_website() {
+        return window.location.host.split('.').reverse()[1];
+    }
+
+    // Handle all website related intialization (additionnal script, css, etc.)
+    init() {
+        this.addAdditionnalScripts();
+    }
+
+    isHandlerAvailable(handler_name) {
+        if (!this.actual_repository[handler_name])
+            return false;
+        else
+            return true;
+    }
+
+    checkMultipleHandler(handlers) {
+        for (let i in handlers) {
+            if (!this.isHandlerAvailable(handlers[i]))
+                return false;
+        }
+        return true;
+    }
+
+    handle(handler_name, ...opts) {
+        if (!this.actual_repository[handler_name])
+            throw new Error(`Handler ${this.actual_repository_name}->${handler_name}() don't exist !`);
+        else
+            return this.actual_repository[handler_name](...opts);
+    }
+
 }
 
+const repo = new RepositoryManager(repositories);
+
+// Additionnal script to apply per website, not in repository for clarity reasons
 function additionnal_script() {
     var script = {
         webnovel: () => {
@@ -116,47 +197,18 @@ function additionnal_script() {
         }
     }
 
-    var additionnal = select(script);
+    var additionnal = RepositoryManager.select(script);
     console.log('Additional script for this website : ', additionnal);
 
     if (additionnal)
         additionnal();
 }
 
-// Function to fetch the novel id, used to differentiate which characters to load, could be name or id but must be unique
-function get_novel_id() {
-
-    var novel_id_getter = {
-        webnovel: () => window.location.href.split('/')[4],
-        boxnovel: () => window.location.href.split('/')[4],
-        readfreenovel: () => window.location.href.split('/')[3],
-        wuxiaworld: () => window.location.href.split('/')[4],
-        daonovel: () => window.location.href.split('/')[4],
-        googleusercontent: () => window.location.href.split('/')[3],
-    }
-
-    return select(novel_id_getter)();
-}
-
-// Function to fetch novel name, used to determinate novels when we want to import/export datas
-function get_novel_name() {
-    var novel_name_getter = {
-        webnovel: () => $("header a.dib.ell").prop('title'),
-        boxnovel: () => $(".breadcrumb a")[1].innerText,
-        readfreenovel: () => $(".black-link")[0].innerText,
-        wuxiaworld: () => $(".breadcrumb li")[1].innerText,
-        daonovel: () => $(".breadcrumb li")[1].innerText,
-        googleusercontent: () => $(".breadcrumb li")[1].innerText
-    }
-
-    return select(novel_name_getter)();
-}
-
 // Method to inject the panel in the body, using fixed component in body is the most permissive way, but we can insert it wherever we want
 function panel_injector() {
     var body = $('body');
 
-    console.log('body : ', body);
+    console.log('[Body Component] : ', body);
     body.append(panel_html);
 
 }
@@ -222,6 +274,10 @@ function name_injector(onClickFn, character_list) {
 }
 
 function selectColor(colors, colorNum){
+    const nbColors = 50;
+
+    return randomColor({count: nbColors, seed: repo.handle('get_novel_id')})[colorNum % nbColors];
+
     if (colors < 5) colors = 5; // defaults to one color - avoid divide by zero
     return "hsl(" + (colorNum * (360 / colors) % 360) + ",100%,50%)";
 }
@@ -369,7 +425,7 @@ class Character {
 	}
 
 	onClick() {
-		console.log('im : ', this);
+		console.log('[Character] Character selected : ', this);
         var text = `ID : ${this.id}\nName : ${this.getName()}\nAlias : ${this.alias.length ? this.alias.join(', ') : 'None'}\nDescription: ${this.text}`
         alert(text);
 	}
@@ -379,14 +435,14 @@ const panel_html = `
 <div id="reminder_panel" style="position: fixed; right: 70px; bottom: 5vh; height: 80vh; width: 300px; background-color: white; padding: 30px; border-radius: 5px; box-shadow: 0px 0px 20px -8px rgba(0,0,0,0.75);">
 	<div style="position: relative; width: 100%; height: 100%; display: flex; flex-direction: column">
 		<div style="display: flex; flex-direction: row; justify-content: space-between">
-			<h4>{{actual_panel_name}}</h4>
+			<h4 style="color: darkgrey">{{actual_panel_name}}</h4>
 			<div class="reminder_button" v-on:click="addCharacter">Add</div>
 		</div>
 		<div style="overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column">
 
             <div v-show="mode == 'main'">
                 <div class="menu_container" style="display: flex; flex-wrap: wrap; ">
-                    <div class="menu_item" @click="setMode(menu.panel)" v-for="menu in menu_list">
+                    <div class="menu_item" @click="onMenuClick(menu)" v-for="menu in menu_list">
                         <div class="menu_icon" style="flex-grow: 1; width: 100%; display: flex; align-items: center; justify-content: center">
                             <i :class="menu.icon" style="font-size: 45px"></i>
                         </div>
@@ -440,7 +496,7 @@ const panel_html = `
 
                     <div style="margin-top: 20px">
                         <div>Server online !</div>
-                        <div>the server is running for {{cloud_uptime_string}}</div>
+                        <div>{{cloud_uptime_string}}</div>
                         <div>Nb of settings: {{cloud_score}}. {{cloud_comment}}</div>
                     </div>
                     <div style="margin-top: 20px" v-if="sync_backup === false">
@@ -453,9 +509,11 @@ const panel_html = `
                         <div>Total characters: {{backup_info.character_count}}</div>
                     </div>
                     <div style="margin-top: 20px">
+                        <a class="cloud_button" @click="connect">Refresh connection</a><br/>
                         <a class="cloud_button" @click="cloudFind">Check this key</a><br/>
                         <a class="cloud_button" @click="upload">Upload your novels</a><br/>
                         <a class="cloud_button" @click="restore">Download your novels</a><br/>
+                        <a class="cloud_button" @click="cloudDelete">Delete online save</a><br/>
                     </div>
 
                 </div>
@@ -486,9 +544,10 @@ const panel_html = `
 				<textarea ref="text_input" v-model="edition.text" placeholder="Comment" style="border: 1px black solid; color: black" />
 				<input v-model="edition.alias" placeholder="Aliases, separated by ','" style="height: 20px; padding: 0; width: 100%; border: 1px black solid; color: black"></input>
 				<input v-model="edition.color" type='text' placeholder="Color (like '#FF0000')" style="color: black" />
-				<div style="cursor: pointer" class="reminder_button" @click="saveCharacter">Save</div>
-				<div style="cursor: pointer" class="reminder_button" @click="deleteCharacter(edition.id)" v-if="edition.id">Delete</div>
-				<div style="cursor: pointer" class="reminder_button" @click="disableEdit">Cancel</div>
+				<div class="cloud_button" @click="saveCharacter">Save</div>
+                <div class="cloud_button" @click="deleteCharacter(edition.id)" v-if="edition.id">Delete</div>
+                <div class="cloud_button" @click="onMenuClick('Search', edition.name)">Search</div>
+				<div class="cloud_button" @click="disableEdit">Cancel</div>
 			</div>
 
 			<div v-if="selected_novel" style="display: flex; flex-direction: column">
@@ -505,11 +564,45 @@ const panel_html = `
                 <div v-if="false && mode == 'export'" style="cursor: pointer" @click="setMode('character')">characters</div>
 			</div>
 		</div>
-	</div>
+    </div>
+
+    <modal name="searchbox" :draggable="true" :resizable="true" >
+        <div class="search_container">
+
+            <div class="search_header">
+                <div class="search_bar"><input v-model="search.name" type="text" placeholder="Name of character"></input></div>
+                <select class="search_direction" v-model="search.direction">
+                    <option value="to_right">From chapter 1 to {{ chapter_nb }}</option>
+                    <option value="to_left">From chapter {{ chapter_nb }} to 1</option>
+                </select>
+                <div v-if="search.status == 'IDDLE'" style="align-self: center" @click="searchStart"><a class="cloud_button">Search</a></div>
+                <div v-if="search.status == 'SEARCHING'"style="align-self: center" @click="searchCancel"><a class="cloud_button">Cancel</a></div>
+                <span style="flex-grow: 1"></span>
+                <span class="search_status"></span>
+                <span class="search_progress">{{search.direction == 'to_right' ? search.search_chapter_nb : (chapter_nb - search.search_chapter_nb)}}/{{chapter_nb}}</span>
+            </div>
+
+            <div class="search_result_container" v-if="search.result">
+                <div v-for="chapter in search.result" style="margin-bottom: 30px">
+                    <div v-if="chapter.list.length != 0">
+                        <div style="display: flex;"><a class="search_chapter_link" :href="chapter.link" target="_blank"><i class="fas fa-link"></i></a><h4>{{chapter.chapter_name}}</h4></div>
+                        <div v-for="extract in chapter.list" style="background-color: lightgrey; padding: 5px; margin: 5px 0; border-radius: 3px">
+                            [...]<span v-html="extract"></span>[...]
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </modal>
+
 </div>
 `
 
 function launch_app() {
+
+    Vue.use(window["vue-js-modal"].default);
+
     var app = new Vue({
         el: '#reminder_panel',
         data: {
@@ -535,7 +628,16 @@ function launch_app() {
             cloud_uptime: null,
             cloud_score: null,
             sync_status: 'IDDLE',
-            sync_backup: null
+            sync_backup: null,
+
+            // Research part
+            search: {
+                name: "Zong Cheng",
+                status: 'IDDLE',
+                search_chapter_nb: 0,
+                direction: 'to_left',
+                result: null
+            }
 		},
 		mounted: function() {
 			/*$('#custom').spectrum({
@@ -547,8 +649,139 @@ function launch_app() {
 
             window.onmouseup = _.debounce(this.selectionHandler, 150, {leading: false, trailing: true});
 
+
 		},
         methods: {
+            onMenuClick: function(menu, props) {
+                console.log("Opening menu : %s => ", menu, props || '');
+
+                if (typeof menu == "string")  {
+                    var autoMenu = this.menu_list.find((item) => item.name == menu);
+                    if (!autoMenu)
+                        throw new Error("Menu ${menu} not found.");
+                    menu = autoMenu;
+                }
+
+                if (menu.requiredFeatures) {
+                    if (!repo.checkMultipleHandler(menu.requiredFeatures)) {
+                        alert("Sorry, this feature is not available on this website yet, please tell me if you want it !");
+                        return ;
+                    }
+                }
+
+                if (menu.action)
+                    menu.action(props);
+                if (menu.panel)
+                    setMode(menu.panel)
+            },
+            searchOpen: function(name) {
+                this.search.name = name;
+                this.$modal.show("searchbox");
+            },
+            searchCancel: function() {
+                this.search.status = 'IDDLE';
+            },
+            searchStart: function() {
+
+                function replaceHtml(text_element, word_to_style, class_name) {
+                    html = text_element.html();
+                    re = new RegExp(word_to_style,"gi");
+                    new_html = html.replace(re, "<span class='"+class_name+"'>"+word_to_style+"</span>");
+                    text_element.html(new_html);
+                }
+
+                function newRequest(chapter) {
+                    console.log("generating new request for chapter ", chapter);
+                    var promise = new Promise((resolve, reject) => {
+                        GM_xmlhttpRequest({
+                            method: 'GET',
+                            url: repo.handle('get_chapter_link', chapter),
+                            onload: (res) => resolve(res)
+                        })
+                    })
+
+                    promise = promise.then((res) => {
+                        return onChapterFetched(chapter, res)
+                    });
+
+                    return promise;
+                }
+
+                const onChapterFetched = (chapter, res) => {
+
+                    var promise = new Promise((resolve, reject) => {
+
+                        const name = this.search.name;
+
+                        // parse html response
+                        var page = $.parseHTML(res.response);
+                        var raw = $(page).find(".text-left")[0].outerHTML;
+                        var resultBeforeInjection = $(raw).find(`p:contains(${name})`);
+
+                        // console.log("keyword : ", `p:contains(${name})`);
+                        // console.log("raw response : ", raw);
+                        // console.log("Result before injection : ", resultBeforeInjection);
+    
+                        // Inject bold and fetch result
+                        var list = [];
+                        resultBeforeInjection.each(function(extract) {
+                            replaceHtml($(this), name, "search_finded_name");
+                            list.push(this.innerHTML);
+                        })
+                        // console.log("list of research", list);
+
+                        if (!this.search.result)
+                            this.search.result = []
+    
+                        this.search.result.push({
+                            chapter_name: repo.handle('fetch_chapter_name', page),
+                            list: list,
+                            link: repo.handle('get_chapter_link', chapter)
+                        })
+    
+                        if (this.search.direction == 'to_right')
+                            this.search.search_chapter_nb++;
+                        else
+                            this.search.search_chapter_nb--;
+    
+                        // Check if new request needed
+                        // console.log("last chapter searched : ", this.search.search_chapter_nb);
+                        var needNewRequest;
+                        if (this.search.status != "SEARCHING") {
+                            console.log("Chain Request cancelled");
+                            needNewRequest = false;
+                        }
+                        else if (this.search.direction == "to_right" && this.search.search_chapter_nb >= this.chapter_nb)
+                            needNewRequest = false;
+                        else if (this.search.direction == "to_left" && this.search.search_chapter_nb <= 1)
+                            needNewRequest = false;
+                        else
+                            needNewRequest = true;
+    
+                        // console.log("new request needed ? ", needNewRequest);
+                        if (!needNewRequest)
+                            return resolve();
+
+                        return newRequest(this.search.search_chapter_nb);
+                    })
+
+                    return promise;
+
+                }
+
+                this.search.result = [];
+                
+                console.log("Launching request chain.");
+                var first_search = this.search.direction == 'to_right' ? 1 : this.chapter_nb;
+
+                this.search.search_chapter_nb = first_search;
+                this.search.status = 'SEARCHING';
+                newRequest(first_search)
+                    .then(() => {
+                        console.log("All chapter checked.");
+                        this.search.status = 'IDDLE';
+                    })
+            },
             connect: function() {
                 this.cloud_status = "CONNECTING";
 
@@ -617,6 +850,45 @@ function launch_app() {
 
                 return promise;
 
+            },
+            cloudDelete: function() {
+
+                var promise = new Promise((resolve, reject) => {
+                    this.sync_status = "SYNCING";
+                    var key = this.synchronization_key;
+
+                    GM_xmlhttpRequest({
+                        method: "DELETE",
+                        url: `${host}/novel-settings/${key}`,
+                        headers: {
+                            "Accept": "application/json",       // If not specified, browser defaults will be used.
+                        },
+                        onload: (res) => {
+
+                            if (res.status < 200 || res.status > 299) {
+                                this.sync_status = "FAILED";
+                                return reject();
+                            }
+
+                            this.sync_backup = null;
+                            this.saveSyncKey(key);
+                            return resolve();
+                        }
+                      });
+                })
+
+                promise = promise
+                            .then(() => {
+                                return this.connect();
+                            })
+                            .then(() => {
+                                this.sync_status = "SYNCED";
+                            })
+                            .catch(() => {
+                                this.sync_status = 'FAILED';
+                            })
+
+                return promise;
             },
             upload: function() {
 
@@ -758,7 +1030,7 @@ function launch_app() {
                 this.mode = mode;
             },
             load: function() {
-                var novel_id = get_novel_id();
+                var novel_id = repo.handle('get_novel_id');
                 console.log('novel id : ', novel_id);
 				var data = window.localStorage.getItem("reminder_data");
 				console.log('datas readed : ', data);
@@ -799,7 +1071,7 @@ function launch_app() {
             },
             save: function() {
                 var datas = this.character_list.map((char) => char.export());
-                var novel_id = get_novel_id();
+                var novel_id = repo.handle('get_novel_id');
 
                 console.log("Attempt to saving datas : ", datas);
                 return this.saveNovel(novel_id, JSON.stringify(datas));
@@ -808,7 +1080,7 @@ function launch_app() {
                 // If novel_id and forced_data are set, we are in the importation mode.
 
                 var character_data;
-                novel_id = novel_id || get_novel_id();
+                novel_id = novel_id || repo.handle('get_novel_id');
 
                 character_data = JSON.parse(forced_data);
 
@@ -825,7 +1097,7 @@ function launch_app() {
                 // For now we just override version savedata, in case of needed backward compatibility in the future
                 metadata.version = script_version;
 
-                metadata.novel_list[novel_id] = get_novel_name();
+                metadata.novel_list[novel_id] = repo.handle('get_novel_name');
 
                 data._info = metadata;
 
@@ -926,37 +1198,66 @@ function launch_app() {
                 data._info = null;
                 return _.values(data);
             },
-            novel_name: () => get_novel_name(),
+            novel_name: () => repo.handle('get_novel_name'),
             actual_panel_name: function() {
+                var name;
+
                 if (this.mode == "main")
-                    return "Menu"
-                return this.menu_list.find((menu) => menu.panel == this.mode).name;
+                    name = "Menu";
+                else
+                    name = this.menu_list.find((menu) => menu.panel == this.mode).name;
+
+                const suffix_dict = {
+                    "character": () => ` (${this.character_list.length})`
+                };
+
+                if (suffix_dict[this.mode])
+                    return name + suffix_dict[this.mode]();
+                else
+                    return name;
+
             },
-            menu_list: () => ([
-                {
-                    name: "Characters",
-                    panel: "character",
-                    icon: "fas fa-user"
-                },
-                {
-                    name: "Export",
-                    panel: "export",
-                    icon: "fas fa-file-export"
-                },
-                {
-                    name: "Online Sync",
-                    panel: "sync",
-                    icon: "fas fa-globe-europe"
-                },
-                // {
-                //     name: "Settings",
-                //     panel: "main",
-                //     icon: "fas fa-cogs",
-                // },
-            ]),
+            menu_list: function() {
+                return [
+                    {
+                        name: "Characters",
+                        panel: "character",
+                        icon: "fas fa-user"
+                    },
+                    {
+                        name: "Export",
+                        panel: "export",
+                        icon: "fas fa-file-export"
+                    },
+                    {
+                        name: "Online Sync",
+                        panel: "sync",
+                        icon: "fas fa-globe-europe"
+                    },
+                    {
+                        name: "Search",
+                        action: (props) => this.searchOpen(props),
+                        icon: "fas fa-search",
+                        requiredFeatures: [
+                            'get_chapter_nb', 
+                            'get_novel_link', 
+                            'get_chapter_link', 
+                            'fetch_chapter_name'
+                        ]
+                    }
+                    // {
+                    //     name: "Settings",
+                    //     panel: "main",
+                    //     icon: "fas fa-cogs",
+                    // },
+                ]
+            },
             cloud_uptime_string: function() {
                 var days = this.cloud_uptime / (3600*24);
-                return `${Math.round(days)} days !`
+                if (days == 0)
+                    return `The server is running since today !`;
+                else
+                    return `The server is running for ${Math.round(days)} days !`
             },
             cloud_comment: () => "",
             backup_info: function() {
@@ -974,56 +1275,45 @@ function launch_app() {
                     novel_count: _.size(this.sync_backup.settings._info.novel_list),
                     character_count: character_count,
                 }
+            },
+            chapter_nb: function() {
+                if (repo.isHandlerAvailable('get_chapter_nb'))
+                    return repo.handle('get_chapter_nb');
+                else
+                    return "(unknow)"
             }
          }
     })
 }
 
-const novel_css = `
-    .menu_item {
-        cursor: pointer;
-        flex-shrink: 0;
-        width: 100px;
-        height: 120px;
-        margin: 10px;
-        margin-top: 14px;
-        border-bottom: 1px solid:
-        padding: 5px;
-        display: flex;
-        flex-direction: column;
-        border: 1px solid white;
-        transition: all 0.2s;
-        font-family: 'Poppins', sans-serif;
-        font-size: 14px;
-        line-height: 1.5;
-        color: #888888;
-        -webkit-font-smoothing: antialiased !important;
-    }
-    .menu_item .menu_icon {
-
-    }
-    .menu_item:hover {
-        background-color: #ececec;
-        border-radius: 5px;
-        color: darkgray;
-    }
-    .cloud_button {
-        margin-bottom: 5px;
-        font-size: 15px;
-        cursor: pointer;
-    }
-`;
-
 (function() {
-	'use strict';
-    // Disabled importation for color picker, not sure if it will be practical since use of auto-generated colors (and i'm a lazy guy)
-	//var cssTxt  = GM_getResourceText("spec");
-	GM_addStyle(novel_css);
-    additionnal_script();
-
+    'use strict';
     setTimeout(() => {
-        panel_injector();
-        launch_app();
-    }, 0)
+        // Disabled importation for color picker, not sure if it will be practical since use of auto-generated colors (and i'm a lazy guy)
+        //var cssTxt  = GM_getResourceText("spec");
+        //GM_addStyle(novel_css);
+        var css = GM_getResourceText("css")
+        
+        if (css) {
+            GM_addStyle(css);
+        }
+        else {
+            console.log("No css style, assuming dev mode");
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: "http://localhost:8080/style.css",
+                onload: (res) => {
+                    console.log("css fetched : ", res.response);
+                    GM_addStyle(res.response);
+                }
+            })
+        }
 
+        additionnal_script();
+
+        setTimeout(() => {
+            panel_injector();
+            launch_app();
+        }, 0)
+    }, 100)
 })();

@@ -56,6 +56,10 @@ const repositories = {
     wuxiaworld: {
         get_novel_id: () => window.location.href.split('/')[4],
         get_novel_name: () => $(".breadcrumb li")[1].innerText,
+        get_chapter_nb: () => Number.parseInt(window.location.href.split('/')[5].slice(8)),
+        get_novel_link: () => window.location.href.split('/').slice(0, 5).join('/'),
+        get_chapter_link: (chapter) => repo.handle('get_novel_link') + "/chapter-" + chapter,
+        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim()
     },
     googleusercontent: {
         get_novel_id: () => window.location.href.split('/')[3],
@@ -153,8 +157,10 @@ function additionnal_script() {
         },
         wuxiaworld: () => {
             GM_addStyle ( `
+                .site-content .main-col {
+                    padding-right: 275px !important;
+                }
                 body {
-                    padding-right: 400px !important
                 }
                 .c-blog-post .entry-content {
                 }
@@ -163,12 +169,15 @@ function additionnal_script() {
             ` );
 
             $("a[href='https://wuxiaworld.site']").remove();
+            $(".btn.back").remove();
 
         },
         daonovel: () => {
             GM_addStyle ( `
+                .site-content .main-col {
+                    padding-right: 275px !important;
+                }
                 body {
-                    padding-right: 400px !important
                 }
                 .c-blog-post .entry-content {
                 }
@@ -672,7 +681,7 @@ function launch_app() {
                 if (menu.action)
                     menu.action(props);
                 if (menu.panel)
-                    setMode(menu.panel)
+                    this.setMode(menu.panel)
             },
             searchOpen: function(name) {
                 this.search.name = name;

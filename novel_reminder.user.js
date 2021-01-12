@@ -43,7 +43,8 @@ const repositories = {
         get_chapter_nb: () => Number.parseInt(window.location.href.split('/')[5].slice(8)),
         get_novel_link: () => window.location.href.split('/').slice(0, 5).join('/'),
         get_chapter_link: (chapter) => repo.handle('get_novel_link') + "/chapter-" + chapter,
-        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim()
+        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim(),
+        fetch_chapter_div: (html) => $(html).find(".text-left")[0],
     },
     boxnovel: {
         get_novel_id: () => window.location.href.split('/')[4],
@@ -59,7 +60,8 @@ const repositories = {
         get_chapter_nb: () => Number.parseInt(window.location.href.split('/')[5].slice(8)),
         get_novel_link: () => window.location.href.split('/').slice(0, 5).join('/'),
         get_chapter_link: (chapter) => repo.handle('get_novel_link') + "/chapter-" + chapter,
-        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim()
+        fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim(),
+        fetch_chapter_div: (html) => $(html).find(".text-left")[0],
     },
     googleusercontent: {
         get_novel_id: () => window.location.href.split('/')[3],
@@ -222,63 +224,49 @@ function panel_injector() {
 
 }
 
-// Function for names injection, wrap names with div, fetch css in Character class and insert it
+function replaceHtml(text_element, word_to_style, class_name) {
+    html = text_element.html();
+    re = new RegExp(word_to_style,"gi");
+    new_html = html.replace(re, "<span class='"+class_name+"'>"+word_to_style+"</span>");
+    text_element.html(new_html);
+}
+
 function name_injector(onClickFn, character_list) {
+    console.time("name_injector")
+    // First, backup chapter if not already did
+    var chapter_div = repo.handle("fetch_chapter_div", $("body"));
 
-	// Coloration of all names (and corresponding aliases)
-	character_list.forEach((char) => {
-        //console.log('Injecting for : ', char);
-		var names = char.getNamesFilter();
-        console.log('Names/aliases : ', names);
+    // Save, or restore before treatment
+    if (!window.savedChapter)
+        window.savedChapter = $(chapter_div).clone();
+    else
+        $(chapter_div).html(window.savedChapter.html());
+    
+    var search_string = character_list.reduce((prev, character) => {
+        var names = character.getNamesFilter();
+        return [...prev, ...names];
+    }, [])
 
-		names.forEach((name, i) => {
-			var found = $(`p:contains("${name}"),div:contains("${name}")`).not(`.edited-${i}-${char.id}`);
-			//console.log('search for ', name);
-			//console.log('Found %d elements.', found.length || 0, found);
+    search_string = search_string.map((name) => `(${name})`).join("|");
+    var regex = new RegExp(search_string, "g");
+    var newHtml = $(chapter_div).html().replace(regex, (value) => {
+        return `<span class="reminder_injected">${value}</span>`
+    });
+    $(chapter_div).html(newHtml)
 
-            // Remove references from panel, because it's target the global div who mess up vuejs system...
-            found = found.filter(function () {
-                if ($(this).parents("#reminder_panel").length)
-                    return false;
-                else if ($(this).is("#reminder_panel"))
-                    return false;
-                else
-                    return true;
-            })
-            // ... But the idea of injecting names in the panel is amazing ! So i implement it a bit more properly
-            found = $.merge(found, $(`div.character_description:contains("${name}")`).not(`.edited-${i}-${char.id}`))
+    // HTML injected correctly. Fetching all injected div to add interactivity and proper styles
 
-			if (!found || !found.length)
-				return ;
+    $(".reminder_injected").each(function() {
+        var character = character_list.find((char) => char.hasThisAlias(this.innerHTML));
+        this.style = character.getStyle();
 
+        $(this).click(() => {
+            onClickFn(character.id);
+            return false;
+        });
 
-			$(found).each(function() {
-
-                if ($(this).find(`injected_${char.id}`).length =! -1)
-                    return ;
-
-				var el = $(this).html()
-				var tmp = el.split(name)
-
-                var modified_html = tmp.join(`<span class="injected injected_${char.id}" style="${char.getStyle()}">${name}</span>`);
-				this.innerHTML = modified_html;
-			})
-
-			$(found).addClass(`.edited-${i}-${char.id}`);
-		})
-	})
-
-	// Example for onclick use, must be injected after name injection since div can be modified multiples times during injection (in case of multiple Character in one paragraph)
-	character_list.forEach(({id}) => {
-		var occurences = $(`.injected_${id}`);
-
-        occurences.each(function() {
-            if ($(this).is("listened"))
-                return ;
-            $(this).click(() => onClickFn(id));
-            $(this).addClass("listened")
-        })
-	})
+    })
+    console.timeEnd("name_injector")
 
 }
 
@@ -419,6 +407,17 @@ class Character {
 
     setDefaultColor(color) {
         this.default_color = color;
+    }
+
+    hasThisAlias(alias) {
+        var aliases = this.getNamesFilter();
+
+        for (let i in aliases) {
+            if (aliases[i].indexOf(alias) != -1)
+                return true;
+        }
+
+        return false;
     }
 
 	// Styling for founded names in novel
@@ -977,9 +976,9 @@ function launch_app() {
                 var name = selection.toString();
 
 
-                console.log('New Selection ! ', selection);
-                console.log('range ? ', range);
-                console.log('Rectnagle : ', rect);
+                // console.log('New Selection ! ', selection);
+                // console.log('range ? ', range);
+                // console.log('Rectnagle : ', rect);
 
                 if (this.tooltip_div) {
                     this.tooltip_div.parentNode.removeChild(this.tooltip_div);

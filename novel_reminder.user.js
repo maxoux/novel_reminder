@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  Insert a panel to help you remind names of characters, especially when names are similar or difficult to memorize *looking at korean novels*
 // @author       Maxoux
-// @match        https://www.webnovel.com/book/*/*
+// @match        DISABLED_https://www.webnovel.com/book/*/*
 // @match        https://*boxnovel.com/novel/*/*
 // @match        http://readfreenovel.com/*/*
 // @match        https://wuxiaworld.site/novel/*
@@ -35,13 +35,13 @@ const host = "http://novel.laize.pro"
 const repositories = {
     webnovel: {
         get_novel_id: () => window.location.href.split('/')[4],
-        get_novel_name: () => $("header a.dib.ell").prop('title')
+        get_novel_name: () => $("header a.dib.ell").prop('title'),
     },
     daonovel: {
         get_novel_id: () => window.location.href.split('/')[4],
         get_novel_name: () => $(".breadcrumb li")[1].innerText,
         get_chapter_nb: () => Number.parseInt(window.location.href.split('/')[5].slice(8)),
-        get_novel_link: () => window.location.href.split('/').slice(0, 5).join('/'),
+        get_novel_link: (novel) => novel ? `https://daonovel.com/novel/${novel}` : window.location.href.split('/').slice(0, 5).join('/'),
         get_chapter_link: (chapter) => repo.handle('get_novel_link') + "/chapter-" + chapter,
         fetch_chapter_name: (html) => $(html).find(".breadcrumb .active")[0].innerHTML.trim(),
         fetch_chapter_div: (html) => $(html).find(".text-left")[0],
@@ -49,6 +49,7 @@ const repositories = {
     boxnovel: {
         get_novel_id: () => window.location.href.split('/')[4],
         get_novel_name: () => $(".breadcrumb a")[1].innerText,
+        fetch_chapter_div: (html) => $(html).find(".text-left")[0],
     },
     readfreenovel: {
         get_novel_id: () => window.location.href.split('/')[3],
@@ -162,12 +163,6 @@ function additionnal_script() {
                 .site-content .main-col {
                     padding-right: 275px !important;
                 }
-                body {
-                }
-                .c-blog-post .entry-content {
-                }
-                .body-wrap {
-                }
             ` );
 
             $("a[href='https://wuxiaworld.site']").remove();
@@ -178,12 +173,6 @@ function additionnal_script() {
             GM_addStyle ( `
                 .site-content .main-col {
                     padding-right: 275px !important;
-                }
-                body {
-                }
-                .c-blog-post .entry-content {
-                }
-                .body-wrap {
                 }
             ` );
 
@@ -202,8 +191,6 @@ function additionnal_script() {
                 .body-wrap {
                 }
             ` );
-
-            $("a[href='https://wuxiaworld.site']").remove();
 
         }
     }
@@ -232,6 +219,7 @@ function replaceHtml(text_element, word_to_style, class_name) {
 }
 
 function name_injector(onClickFn, character_list) {
+    console.groupCollapsed("Html Injection")
     console.time("name_injector")
     // First, backup chapter if not already did
     var chapter_div = repo.handle("fetch_chapter_div", $("body"));
@@ -242,12 +230,22 @@ function name_injector(onClickFn, character_list) {
     else
         $(chapter_div).html(window.savedChapter.html());
     
+    console.log("Working Html element : ", chapter_div);
+    
     var search_string = character_list.reduce((prev, character) => {
         var names = character.getNamesFilter();
         return [...prev, ...names];
     }, [])
-
     search_string = search_string.map((name) => `(${name})`).join("|");
+
+    console.log("Generated search string (%d) : ", search_string.length, search_string);
+
+    if (!search_string.length) {
+        console.log("Nothing to search.");
+        console.groupEnd("Html Injection");
+        return ;
+    }
+
     var regex = new RegExp(search_string, "g");
     var newHtml = $(chapter_div).html().replace(regex, (value) => {
         return `<span class="reminder_injected">${value}</span>`
@@ -267,7 +265,8 @@ function name_injector(onClickFn, character_list) {
 
     })
     console.timeEnd("name_injector")
-
+    console.groupEnd("Html Injection");
+    console.log("ok")
 }
 
 function selectColor(colors, colorNum){
@@ -326,29 +325,52 @@ function save_migrate(save, save_version) {
                 })
 
                 return save;
-            },
+            }
+        },
+        {
             version: "0.8",
             fn: (save) => {
                 save._info.synchro_key = uuidv4();
 
                 return save;
             }
+        },
+        {
+            version: "1.0",
+            fn: (save) => {
+                save._info.novel_progression = {};
+
+                return save;
+            }
         }
     ]
+    console.groupCollapsed("Save Migration");
+    console.log("save_version: ", save_version);
 
     var version_iterator = 0;
-    while (version_iterator != save_migration_dict.length && save_version > save_migration_dict[version_iterator].version)
+    console.log("condition : ", `${save_version} < ${save_migration_dict[version_iterator].version}`)
+    while ( version_iterator != save_migration_dict.length && 
+            save_version > save_migration_dict[version_iterator].version) {
+        
+        console.log("version %d skip", save_migration_dict[version_iterator].version);
+        console.log("condition : ", `${save_version} > ${save_migration_dict[version_iterator].version}`)
         version_iterator++;
+    } 
 
     if (version_iterator == save_migration_dict.length) {
         console.log('No migration needed');
+        console.groupEnd();
         return save;
     }
 
+    console.log("total migration availables", save_migration_dict.length);
+    console.log("version_iterator: ", version_iterator);
     console.log('Detected older save version, save need %d upgrades.', save_migration_dict.length - version_iterator);
+
 
     var tmp_save = save;;
     while (version_iterator != save_migration_dict.length) {
+        console.log("Applying migration %s->%s", '?', save_migration_dict[version_iterator].version);
         tmp_save = _.cloneDeep(tmp_save);
         tmp_save = save_migration_dict[version_iterator].fn(tmp_save);
         console.log('Save patch %s applied, result : ', save_migration_dict[version_iterator].version, tmp_save);
@@ -356,6 +378,7 @@ function save_migrate(save, save_version) {
     }
 
     console.log('Save fully patched !');
+    console.groupEnd("Save Migration")
     return tmp_save;
 }
 
@@ -428,6 +451,7 @@ class Character {
 			"cursor": "pointer",
             "-webkit-text-stroke": "0.45px grey"
 		};
+
 
 		return _.map(style, (value, key) => `${key}:${value}`).join(';');
 	}
@@ -527,6 +551,10 @@ const panel_html = `
                 </div>
             </div>
 
+            <div v-show="mode == 'novel_progression'">
+                <a class="cloud_button" @click="progressionCheck">Check</a>
+            </div>
+
             <div v-show="mode == 'character'">
 		    	<div class="character_container" v-for="character in character_list" :key="character.id" style="margin-bottom: 10px">
 			    	<div @click="editCharacter(character.id)" :style="character.getStyle() + '; font-size: 18px'">{{character.getName()}}</div>
@@ -574,7 +602,8 @@ const panel_html = `
 		</div>
     </div>
 
-    <modal name="searchbox" :draggable="true" :resizable="true" >
+    <modal name="searchbox" :draggable="true" :resizable="true" :click-to-close="false" ref="modal" v-bind="modalProps">
+        <div style="position: absolute; top: 10px; right: 10px;" class="close_modal" @click="searchClose" ><i class="fas fa-times"></i></div>
         <div class="search_container">
 
             <div class="search_header">
@@ -630,6 +659,8 @@ function launch_app() {
 
             tooltip_div: null,
 
+            save: null,
+
             // Synchronization part
             synchronization_key: null,
             cloud_status: 'DISCONNECTED',
@@ -645,8 +676,9 @@ function launch_app() {
                 search_chapter_nb: 0,
                 direction: 'to_left',
                 result: null
-            }
-		},
+            },
+            modalProps: null,
+        },
 		mounted: function() {
 			/*$('#custom').spectrum({
 				color: "#f00"
@@ -682,9 +714,28 @@ function launch_app() {
                 if (menu.panel)
                     this.setMode(menu.panel)
             },
+            searchClose: function() {
+                this.searchCancel();
+
+                var {height, width, shift} = this.$refs.modal;
+                
+                console.log("modal : ", height, width, shift);
+
+                localStorage.setItem("modalSettings", JSON.stringify({height, width, shift}));
+
+                this.$modal.hide("searchbox");
+            },
             searchOpen: function(name) {
                 this.search.name = name;
+
+                if (!this.modalProps && localStorage.getItem("modalSettings")) {
+                    this.modalProps = JSON.parse(localStorage.getItem("modalSettings"));
+                }
+                console.log("props: ", this.modalProps);
+
+
                 this.$modal.show("searchbox");
+                console.log("modal : ", this.$refs.modal);
             },
             searchCancel: function() {
                 this.search.status = 'IDDLE';
@@ -699,7 +750,6 @@ function launch_app() {
                 }
 
                 function newRequest(chapter) {
-                    console.log("generating new request for chapter ", chapter);
                     var promise = new Promise((resolve, reject) => {
                         GM_xmlhttpRequest({
                             method: 'GET',
@@ -717,18 +767,31 @@ function launch_app() {
 
                 const onChapterFetched = (chapter, res) => {
 
+                    if (res.status < 200 || res.status > 299) {
+                        console.error("Request for chapter %d failed with status %d , retrying.", chapter, res.status);
+                        return newRequest(chapter);
+                    }
+
+
                     var promise = new Promise((resolve, reject) => {
 
                         const name = this.search.name;
 
                         // parse html response
                         var page = $.parseHTML(res.response);
-                        var raw = $(page).find(".text-left")[0].outerHTML;
+                        var chapter_div = $(page).find(".text-left")[0]
+                        var raw = chapter_div?.outerHTML || "";
                         var resultBeforeInjection = $(raw).find(`p:contains(${name})`);
 
-                        // console.log("keyword : ", `p:contains(${name})`);
-                        // console.log("raw response : ", raw);
-                        // console.log("Result before injection : ", resultBeforeInjection);
+                        console.groupCollapsed(`Search Chapter ${chapter} fetched`)
+
+                        console.log("keyword : ", `p:contains(${name})`);
+                        console.log("Chapter", chapter_div);
+                        console.log("Chapter raw", raw);
+                        console.log("Result before injection : ", resultBeforeInjection);
+
+                        if (!raw || !raw.length)
+                            console.error("Unable to searhc in chapter %d : ", chapter, page);
     
                         // Inject bold and fetch result
                         var list = [];
@@ -765,6 +828,8 @@ function launch_app() {
                             needNewRequest = false;
                         else
                             needNewRequest = true;
+
+                        console.groupEnd(`Search Chapter ${chapter} fetched`)
     
                         // console.log("new request needed ? ", needNewRequest);
                         if (!needNewRequest)
@@ -789,6 +854,52 @@ function launch_app() {
                         console.log("All chapter checked.");
                         this.search.status = 'IDDLE';
                     })
+            },
+            progressionCheck: function() {
+                var getNovelProgression = (slug) => (new Promise((resolve, reject) => {
+
+                    GM_xmlhttpRequest({
+                        method: "POST",
+                        url: "https://daonovel.com/wp-admin/admin-ajax.php",
+                        headers:    {
+                            "Content-Type": "application/x-www-form-urlencoded"
+                        },
+                        data: "action=manga_get_chapters&manga=437849",
+                        onload: (res) => {
+                            console.log("response: ", res);
+    
+                            if (res.status < 200 || res.status > 299) {
+                                throw new Error("Novel progress fetch failed : ", res);
+                                return ;
+                            }
+
+                            $()
+    
+                        }
+                      });
+
+                }))
+                
+                console.log("First check try");
+                GM_xmlhttpRequest({
+                    method: "POST",
+                    url: "https://daonovel.com/wp-admin/admin-ajax.php",
+                    headers:    {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    data: "action=manga_get_chapters&manga=437849",
+                    onload: (res) => {
+                        console.log("response: ", res);
+
+                        if (res.status < 200 || res.status > 299) {
+                            throw new Error("Novel progress fetch failed : ", res);
+                            return ;
+                        }
+
+                    }
+                  });
+
+
             },
             connect: function() {
                 this.cloud_status = "CONNECTING";
@@ -1039,11 +1150,13 @@ function launch_app() {
             },
             load: function() {
                 var novel_id = repo.handle('get_novel_id');
+                console.group("Save Loading");
                 console.log('novel id : ', novel_id);
 				var data = window.localStorage.getItem("reminder_data");
-				console.log('datas readed : ', data);
-                if (!data || !data.length)
+                if (!data || !data.length) {
+                    console.groupEnd("Save Loading");
                     return ;
+                }
 				try {
 					data = JSON.parse(data);
 				}
@@ -1055,8 +1168,12 @@ function launch_app() {
                 // Apply migration savefile on the fly, isn't saved immediately if migration was needed.
                 data = save_migrate(data, data._info ? data._info.version : "0.1");
 
-                if (!data[novel_id])
+                console.log("Final Loaded Save : ", data);
+
+                if (!data[novel_id]) {
+                    console.groupEnd("Save Loading");
                     return ;
+                }
 
 				this.character_list = [];
 				console.log('datas for novel : ', data[novel_id]);
@@ -1066,6 +1183,9 @@ function launch_app() {
                 });
 
                 this.synchronization_key = data._info.synchro_key;
+                this.save = data;
+
+                console.groupEnd("Save Loading");
 
                 this.generateDefaultColors();
             },
@@ -1112,7 +1232,9 @@ function launch_app() {
                 data[novel_id] = character_data;
 				window.localStorage.setItem("reminder_data", JSON.stringify(data));
                 console.log('saved : ', data)
-                // this.load();
+                
+                this.save = data;
+
 				return data;
             },
 			disableEdit: function() {
@@ -1252,7 +1374,12 @@ function launch_app() {
                             'get_chapter_link', 
                             'fetch_chapter_name'
                         ]
-                    }
+                    },
+                    // {
+                    //     name: "Search",
+                    //     panel: "novel_progression",
+                    //     icon: "fas fa-egg"
+                    // },
                     // {
                     //     name: "Settings",
                     //     panel: "main",
@@ -1309,9 +1436,11 @@ function launch_app() {
             console.log("No css style, assuming dev mode");
             GM_xmlhttpRequest({
                 method: 'GET',
-                url: "http://localhost:8080/style.css",
+                url: "http://localhost:8080/style.css?timestamp="+new Date().getDate(),
                 onload: (res) => {
+                    console.groupCollapsed("Dev CSS fetched");
                     console.log("css fetched : ", res.response);
+                    console.groupEnd("Dev CSS fetched");
                     GM_addStyle(res.response);
                 }
             })

@@ -659,7 +659,7 @@ function launch_app() {
 
             tooltip_div: null,
 
-            save: null,
+            save_data: null,
 
             // Synchronization part
             synchronization_key: null,

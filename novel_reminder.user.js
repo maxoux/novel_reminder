@@ -1183,7 +1183,7 @@ function launch_app() {
                 });
 
                 this.synchronization_key = data._info.synchro_key;
-                this.save = data;
+                this.saveData = data;
 
                 console.groupEnd("Save Loading");
 
@@ -1233,7 +1233,7 @@ function launch_app() {
 				window.localStorage.setItem("reminder_data", JSON.stringify(data));
                 console.log('saved : ', data)
                 
-                this.save = data;
+                this.savedata = data;
 
 				return data;
             },

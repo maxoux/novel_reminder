@@ -688,8 +688,6 @@ function launch_app() {
             Vue.nextTick(this.refresh);
 
             window.onmouseup = _.debounce(this.selectionHandler, 150, {leading: false, trailing: true});
-
-
 		},
         methods: {
             onMenuClick: function(menu, props) {
@@ -1446,6 +1444,7 @@ function launch_app() {
             })
         }
 
+        // Check actual website and connect the corresponding scrapper
         additionnal_script();
 
         setTimeout(() => {
